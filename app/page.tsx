@@ -48,7 +48,7 @@ import {
   totalActualSpending,
   totalEstimatedSetupBudget,
 } from "@/lib/calculations";
-import { createBlankProject, id, makeSetupItem } from "@/lib/seed";
+import { createBlankProject, demoProject, id, makeSetupItem, seedData } from "@/lib/seed";
 import { loadData, saveData, touchProject } from "@/lib/storage";
 import { AppData, ChecklistLibraryItem, Equipment, MasterCategory, MasterCategoryType, MenuMixItem, OpeningScenario, Partner, Product, Project, RiskItem, SetupBudgetItem, StaffRole, StaffScenario } from "@/lib/types";
 
@@ -226,20 +226,93 @@ function copyProject(project: Project): Project {
   return { ...structuredClone(project), id: id(), name: `${project.name} Copy`, cafeName: `${project.cafeName} Copy`, createdAt: now, updatedAt: now, health: "Draft" };
 }
 
+function ConfirmDeleteModal({ projectName, onCancel, onConfirm }: { projectName: string; onCancel: () => void; onConfirm: () => void }) {
+  return (
+    <div className="fixed inset-0 z-40 grid place-items-center bg-black/30 p-4">
+      <div className="w-full max-w-md rounded-lg bg-white p-5 shadow-soft">
+        <h3 className="text-lg font-bold">Hapus Project</h3>
+        <p className="mt-2 text-sm leading-6 text-muted">Yakin ingin menghapus {projectName}? Data project akan hilang dari browser ini.</p>
+        <div className="mt-5 flex justify-end gap-2">
+          <button className="h-10 rounded-md border border-line bg-white px-4 text-sm" onClick={onCancel}>Batal</button>
+          <button className="h-10 rounded-md bg-clay px-4 text-sm font-medium text-white" onClick={onConfirm}>Hapus Project</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ProjectManagerModal({ data, onClose, onSelect, onDuplicate, onDelete }: { data: AppData; onClose: () => void; onSelect: (id: string) => void; onDuplicate: (project: Project) => void; onDelete: (id: string) => void }) {
+  return (
+    <div className="fixed inset-0 z-40 grid place-items-center bg-black/30 p-4">
+      <div className="max-h-[86vh] w-full max-w-3xl overflow-auto rounded-lg bg-white p-5 shadow-soft">
+        <div className="flex items-center justify-between gap-3">
+          <h3 className="text-lg font-bold">Kelola Project</h3>
+          <button className="h-9 rounded-md border border-line px-3 text-sm" onClick={onClose}>Tutup</button>
+        </div>
+        <div className="mt-4 grid gap-3">
+          {data.projects.map((project) => (
+            <div key={project.id} className="grid gap-3 rounded-md border border-line p-3 md:grid-cols-[1fr_auto]">
+              <button className="text-left" onClick={() => onSelect(project.id)}>
+                <strong>{project.cafeName}</strong>
+                <p className="text-sm text-muted">{project.health} · Last updated {new Date(project.updatedAt).toLocaleString("id-ID", { dateStyle: "short", timeStyle: "short" })}</p>
+              </button>
+              <div className="flex flex-wrap gap-2">
+                <button className="h-9 rounded-md border border-line px-3 text-sm" onClick={() => onDuplicate(project)}>Duplicate</button>
+                <button className="h-9 rounded-md border border-line px-3 text-sm text-clay" onClick={() => onDelete(project.id)}>Delete</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EmptyDashboard({ createProject, importBackupFile, resetDemo }: { createProject: () => void; importBackupFile: (file: File) => void; resetDemo: () => void }) {
+  return (
+    <main className="grid min-h-screen place-items-center bg-paper p-6">
+      <div className="w-full max-w-xl rounded-lg border border-line bg-white p-6 text-center shadow-soft">
+        <h1 className="text-2xl font-bold">Belum ada project cafe.</h1>
+        <p className="mt-2 text-sm text-muted">Mulai project baru, import backup, atau load demo project.</p>
+        <div className="mt-5 flex flex-wrap justify-center gap-2">
+          <button className="h-10 rounded-md bg-sage px-4 text-sm font-medium text-white" onClick={createProject}>Buat Project Baru</button>
+          <label className="inline-flex h-10 cursor-pointer items-center rounded-md border border-line bg-white px-4 text-sm">
+            Import Backup
+            <input className="hidden" type="file" accept="application/json" onChange={(event) => event.target.files?.[0] && importBackupFile(event.target.files[0])} />
+          </label>
+          <button className="h-10 rounded-md border border-line bg-white px-4 text-sm" onClick={resetDemo}>Load Demo Project</button>
+        </div>
+      </div>
+    </main>
+  );
+}
+
 export default function Page() {
   const [data, setData] = useState<AppData | null>(null);
   const [active, setActive] = useState<ModuleKey>("dashboard");
   const [selectedId, setSelectedId] = useState<string>("");
+  const [hydrated, setHydrated] = useState(false);
+  const [saveState, setSaveState] = useState<"saved" | "unsaved">("saved");
+  const [lastSavedAt, setLastSavedAt] = useState<string>("");
+  const [pendingDeleteId, setPendingDeleteId] = useState<string>("");
+  const [projectManagerOpen, setProjectManagerOpen] = useState(false);
 
   useEffect(() => {
     const loaded = loadData();
     setData(loaded);
     setSelectedId(loaded.projects[0]?.id || "");
+    setLastSavedAt(localStorage.getItem("fnb-consult-last-saved-at") || "");
+    setHydrated(true);
   }, []);
 
   useEffect(() => {
-    if (data) saveData(data);
-  }, [data]);
+    if (!data || !hydrated) return;
+    setSaveState("unsaved");
+    const handle = window.setTimeout(() => {
+      persistData(data);
+    }, 700);
+    return () => window.clearTimeout(handle);
+  }, [data, hydrated]);
 
   const project = data?.projects.find((item) => item.id === selectedId) || data?.projects[0];
 
@@ -255,15 +328,113 @@ export default function Page() {
     if (project) setProject({ ...project, [key]: value });
   };
 
-  const resetDemo = () => {
-    localStorage.removeItem("fnb-consult-data-v1");
-    const loaded = loadData();
-    setData(loaded);
-    setSelectedId(loaded.projects[0]?.id || "");
+  const persistData = (nextData: AppData) => {
+    saveData(nextData);
+    const savedAt = new Date().toISOString();
+    localStorage.setItem("fnb-consult-last-saved-at", savedAt);
+    setLastSavedAt(savedAt);
+    setSaveState("saved");
   };
 
-  if (!data || !project) {
+  const createProject = () => {
+    const next = createBlankProject();
+    setData((current) => current ? { ...current, projects: [next, ...current.projects] } : { ...seedData, projects: [next] });
+    setSelectedId(next.id);
+    setActive("project");
+  };
+
+  const duplicateProject = (target: Project) => {
+    const next = copyProject(target);
+    setData((current) => current ? { ...current, projects: [next, ...current.projects] } : current);
+    setSelectedId(next.id);
+  };
+
+  const requestDeleteProject = (projectId: string) => {
+    setPendingDeleteId(projectId);
+  };
+
+  const confirmDeleteProject = () => {
+    if (!data || !pendingDeleteId) return;
+    if (data.projects.length === 1) {
+      const onlyProject = data.projects[0];
+      if (onlyProject?.cafeName === "Demo Cafe Kemitraan") {
+        window.alert("Demo project tidak bisa dihapus jika menjadi satu-satunya project. Buat atau import project lain dulu.");
+        setPendingDeleteId("");
+        return;
+      }
+    }
+    const remaining = data.projects.filter((item) => item.id !== pendingDeleteId);
+    const nextProjects = remaining.length ? remaining : [createBlankProject()];
+    setData({ ...data, projects: nextProjects });
+    setSelectedId(nextProjects[0]?.id || "");
+    setActive(remaining.length ? active : "dashboard");
+    setPendingDeleteId("");
+  };
+
+  const exportBackup = () => {
+    if (!data) return;
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `fnb-consult-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const importBackupFile = async (file: File) => {
+    try {
+      const raw = await file.text();
+      const parsed = JSON.parse(raw) as AppData;
+      if (!Array.isArray(parsed.projects) || !parsed.settings) {
+        window.alert("Format backup tidak valid.");
+        return;
+      }
+      if (!window.confirm("Import backup akan mengganti data saat ini. Lanjutkan?")) return;
+      setData(parsed);
+      setSelectedId(parsed.projects[0]?.id || "");
+      setActive("dashboard");
+    } catch {
+      window.alert("File backup tidak bisa dibaca. Pastikan formatnya JSON backup dari aplikasi ini.");
+    }
+  };
+
+  const clearAllLocalData = () => {
+    const typed = window.prompt("Ketik HAPUS untuk menghapus semua data lokal.");
+    if (typed !== "HAPUS") return;
+    localStorage.removeItem("fnb-consult-data-v1");
+    localStorage.removeItem("fnb-consult-last-saved-at");
+    const next = createBlankProject();
+    setData({ ...seedData, projects: [next] });
+    setSelectedId(next.id);
+    setLastSavedAt("");
+    setActive("dashboard");
+  };
+
+  const resetDemo = () => {
+    if (!data) return;
+    const demo = demoProject();
+    const existing = data.projects.find((item) => item.cafeName === "Demo Cafe Kemitraan");
+    if (existing) {
+      const replace = window.confirm("Demo sudah ada. OK untuk replace demo, Cancel untuk buat salinan baru.");
+      if (replace) {
+        const projects = data.projects.map((item) => item.id === existing.id ? { ...demo, id: existing.id } : item);
+        setData({ ...data, projects });
+        setSelectedId(existing.id);
+        return;
+      }
+    }
+    const demoCopy = { ...demo, id: id() };
+    setData({ ...data, projects: [demoCopy, ...data.projects] });
+    setSelectedId(demoCopy.id);
+  };
+
+  if (!data) {
     return <main className="flex min-h-screen items-center justify-center bg-paper text-muted">Menyiapkan kalkulator...</main>;
+  }
+
+  if (!project) {
+    return <EmptyDashboard createProject={createProject} importBackupFile={importBackupFile} resetDemo={resetDemo} />;
   }
 
   const estimatedSetup = totalEstimatedSetupBudget(project.setupBudget);
@@ -274,8 +445,8 @@ export default function Page() {
 
   return (
     <main className="min-h-screen bg-paper">
-      <aside className="no-print fixed inset-y-0 left-0 hidden w-72 border-r border-line bg-[#fbfaf6] p-4 lg:block">
-        <div className="mb-6 flex items-center gap-3">
+      <aside className="no-print fixed inset-y-0 left-0 hidden h-screen w-72 flex-col border-r border-line bg-[#fbfaf6] p-4 lg:flex">
+        <div className="mb-4 flex shrink-0 items-center gap-3">
           <div className="grid h-10 w-10 place-items-center rounded-lg bg-sage text-white">
             <Calculator size={20} />
           </div>
@@ -284,14 +455,20 @@ export default function Page() {
             <p className="text-xs text-muted">Local-first MVP</p>
           </div>
         </div>
-        <select className="mb-4 h-10 w-full rounded-md border border-line bg-white px-3 text-sm" value={project.id} onChange={(event) => setSelectedId(event.target.value)}>
+        <select className="mb-4 h-10 w-full shrink-0 rounded-md border border-line bg-white px-3 text-sm" value={project.id} onChange={(event) => {
+          if (event.target.value === "__new__") return createProject();
+          if (event.target.value === "__manage__") return setProjectManagerOpen(true);
+          setSelectedId(event.target.value);
+        }}>
           {data.projects.map((item) => (
             <option key={item.id} value={item.id}>
               {item.cafeName}
             </option>
           ))}
+          <option value="__new__">+ Buat Project Baru</option>
+          <option value="__manage__">Kelola Project</option>
         </select>
-        <nav className="grid gap-1">
+        <nav className="grid flex-1 gap-1 overflow-y-auto pb-8 pr-1">
           {modules.map((module) => (
             <button key={module.key} onClick={() => setActive(module.key)} className={cn("rounded-md px-3 py-2 text-left text-sm transition", active === module.key ? "bg-ink text-white" : "text-muted hover:bg-white hover:text-ink")}>
               {module.label}
@@ -299,13 +476,8 @@ export default function Page() {
           ))}
         </nav>
         <button
-          className="mt-5 inline-flex h-10 w-full items-center justify-center gap-2 rounded-md bg-sage px-3 text-sm font-medium text-white"
-          onClick={() => {
-            const next = createBlankProject();
-            setData({ ...data, projects: [next, ...data.projects] });
-            setSelectedId(next.id);
-            setActive("project");
-          }}
+          className="mt-4 inline-flex h-10 w-full shrink-0 items-center justify-center gap-2 rounded-md bg-sage px-3 text-sm font-medium text-white"
+          onClick={createProject}
         >
           <Plus size={16} /> Project baru
         </button>
@@ -319,6 +491,19 @@ export default function Page() {
               <h2 className="text-xl font-bold">{project.cafeName}</h2>
             </div>
             <div className="flex flex-wrap gap-2">
+              <div className="grid content-center text-right text-xs text-muted">
+                <span>{saveState === "saved" ? "Saved locally" : "Unsaved changes"}</span>
+                <span>{lastSavedAt ? `Last saved: ${new Date(lastSavedAt).toLocaleString("id-ID", { dateStyle: "short", timeStyle: "short" })}` : "Belum pernah disimpan"}</span>
+              </div>
+              <select className="h-10 rounded-md border border-line bg-white px-3 text-sm lg:hidden" value={project.id} onChange={(event) => {
+                if (event.target.value === "__new__") return createProject();
+                if (event.target.value === "__manage__") return setProjectManagerOpen(true);
+                setSelectedId(event.target.value);
+              }}>
+                {data.projects.map((item) => <option key={item.id} value={item.id}>{item.cafeName}</option>)}
+                <option value="__new__">+ Buat Project Baru</option>
+                <option value="__manage__">Kelola Project</option>
+              </select>
               <select className="h-10 rounded-md border border-line bg-white px-3 text-sm lg:hidden" value={active} onChange={(event) => setActive(event.target.value as ModuleKey)}>
                 {modules.map((module) => (
                   <option key={module.key} value={module.key}>
@@ -329,7 +514,7 @@ export default function Page() {
               <button className="inline-flex h-10 items-center gap-2 rounded-md border border-line bg-white px-3 text-sm" onClick={() => window.print()}>
                 <Printer size={16} /> Print / PDF
               </button>
-              <button className="inline-flex h-10 items-center gap-2 rounded-md bg-ink px-3 text-sm font-medium text-white" onClick={() => saveData(data)}>
+              <button className="inline-flex h-10 items-center gap-2 rounded-md bg-ink px-3 text-sm font-medium text-white" onClick={() => persistData(data)}>
                 <Save size={16} /> Save
               </button>
             </div>
@@ -337,8 +522,8 @@ export default function Page() {
         </header>
 
         <div className="px-4 py-6 lg:px-8">
-          {active === "dashboard" && <Dashboard data={data} setData={setData} setSelectedId={setSelectedId} setActive={setActive} resetDemo={resetDemo} />}
-          {active === "project" && <ProjectBasics project={project} updateProject={updateProject} />}
+          {active === "dashboard" && <Dashboard data={data} setData={setData} setSelectedId={setSelectedId} setActive={setActive} resetDemo={resetDemo} createProject={createProject} duplicateProject={duplicateProject} requestDeleteProject={requestDeleteProject} importBackupFile={importBackupFile} />}
+          {active === "project" && <ProjectBasics project={project} updateProject={updateProject} requestDeleteProject={requestDeleteProject} duplicateProject={duplicateProject} />}
           {active === "ownership" && <Ownership project={project} setProject={setProject} />}
           {active === "setup" && <SetupBudget project={project} setProject={setProject} settings={data.settings} />}
           {active === "products" && <Products project={project} setProject={setProject} categories={activeCategories(data.settings, "product").map((category) => category.name)} />}
@@ -362,15 +547,37 @@ export default function Page() {
               data={data}
               setData={setData}
               resetDemo={resetDemo}
+              selectedId={selectedId}
+              createProject={createProject}
+              exportBackup={exportBackup}
+              importBackupFile={importBackupFile}
+              clearAllLocalData={clearAllLocalData}
             />
           )}
         </div>
       </section>
+      {pendingDeleteId && (
+        <ConfirmDeleteModal
+          projectName={data.projects.find((item) => item.id === pendingDeleteId)?.cafeName || "project ini"}
+          onCancel={() => setPendingDeleteId("")}
+          onConfirm={confirmDeleteProject}
+        />
+      )}
+      {projectManagerOpen && (
+        <ProjectManagerModal
+          data={data}
+          onClose={() => setProjectManagerOpen(false)}
+          onSelect={(idValue) => { setSelectedId(idValue); setProjectManagerOpen(false); }}
+          onDuplicate={duplicateProject}
+          onDelete={requestDeleteProject}
+        />
+      )}
     </main>
   );
 }
 
-function Dashboard({ data, setData, setSelectedId, setActive, resetDemo }: { data: AppData; setData: (data: AppData) => void; setSelectedId: (id: string) => void; setActive: (key: ModuleKey) => void; resetDemo: () => void }) {
+function Dashboard({ data, setData, setSelectedId, setActive, resetDemo, createProject, duplicateProject, requestDeleteProject, importBackupFile }: { data: AppData; setData: (data: AppData) => void; setSelectedId: (id: string) => void; setActive: (key: ModuleKey) => void; resetDemo: () => void; createProject: () => void; duplicateProject: (project: Project) => void; requestDeleteProject: (id: string) => void; importBackupFile: (file: File) => void }) {
+  if (!data.projects.length) return <EmptyDashboard createProject={createProject} importBackupFile={importBackupFile} resetDemo={resetDemo} />;
   return (
     <div className="grid gap-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -379,12 +586,7 @@ function Dashboard({ data, setData, setSelectedId, setActive, resetDemo }: { dat
           <p className="text-sm text-muted">Semua kartu memakai data project yang tersimpan di browser perangkat ini.</p>
         </div>
         <div className="flex gap-2">
-          <button className="inline-flex h-10 items-center gap-2 rounded-md bg-sage px-3 text-sm font-medium text-white" onClick={() => {
-            const next = createBlankProject();
-            setData({ ...data, projects: [next, ...data.projects] });
-            setSelectedId(next.id);
-            setActive("project");
-          }}>
+          <button className="inline-flex h-10 items-center gap-2 rounded-md bg-sage px-3 text-sm font-medium text-white" onClick={createProject}>
             <Plus size={16} /> Buat Project
           </button>
           <button className="h-10 rounded-md border border-line bg-white px-3 text-sm" onClick={resetDemo}>Reset demo</button>
@@ -395,15 +597,12 @@ function Dashboard({ data, setData, setSelectedId, setActive, resetDemo }: { dat
           const mp = monthlyProjectionResult(project);
           const readiness = calculateReadinessScore(project);
           return (
-            <button key={project.id} className="rounded-lg border border-line bg-white p-5 text-left shadow-soft transition hover:-translate-y-0.5" onClick={() => {
-              setSelectedId(project.id);
-              setActive("summary");
-            }}>
+            <div key={project.id} className="rounded-lg border border-line bg-white p-5 text-left shadow-soft transition hover:-translate-y-0.5">
               <div className="flex items-start justify-between gap-3">
-                <div>
+                <button className="text-left" onClick={() => { setSelectedId(project.id); setActive("summary"); }}>
                   <h3 className="text-lg font-bold">{project.cafeName}</h3>
                   <p className="text-sm text-muted">{project.businessType} · {project.projectStatus}</p>
-                </div>
+                </button>
                 <Badge tone={project.health === "Ready to pitch" || project.health === "Opened" ? "good" : project.health === "Needs review" ? "bad" : "warn"}>{project.health}</Badge>
               </div>
               <div className="mt-5 grid grid-cols-2 gap-3 text-sm">
@@ -413,7 +612,11 @@ function Dashboard({ data, setData, setSelectedId, setActive, resetDemo }: { dat
                 <span className="text-muted">Net profit</span><strong>{money(mp.netProfit)}</strong>
                 <span className="text-muted">Readiness</span><strong>{num(readiness.score)}% · {readiness.status}</strong>
               </div>
-            </button>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <button className="h-9 rounded-md border border-line px-3 text-sm" onClick={() => duplicateProject(project)}>Duplicate</button>
+                <button className="h-9 rounded-md border border-line px-3 text-sm text-clay" onClick={() => requestDeleteProject(project.id)}>Delete</button>
+              </div>
+            </div>
           );
         })}
       </div>
@@ -421,10 +624,16 @@ function Dashboard({ data, setData, setSelectedId, setActive, resetDemo }: { dat
   );
 }
 
-function ProjectBasics({ project, updateProject }: { project: Project; updateProject: <K extends keyof Project>(key: K, value: Project[K]) => void }) {
+function ProjectBasics({ project, updateProject, requestDeleteProject, duplicateProject }: { project: Project; updateProject: <K extends keyof Project>(key: K, value: Project[K]) => void; requestDeleteProject: (id: string) => void; duplicateProject: (project: Project) => void }) {
   return (
     <div className="grid gap-5">
-      <h2 className="text-2xl font-bold">Buat / Edit Project Cafe</h2>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-2xl font-bold">Buat / Edit Project Cafe</h2>
+        <div className="flex gap-2">
+          <button className="h-10 rounded-md border border-line bg-white px-3 text-sm" onClick={() => duplicateProject(project)}>Duplicate project</button>
+          <button className="h-10 rounded-md border border-line bg-white px-3 text-sm text-clay" onClick={() => requestDeleteProject(project.id)}>Hapus Project</button>
+        </div>
+      </div>
       <div className="grid gap-4 rounded-lg border border-line bg-white p-5 shadow-soft md:grid-cols-2">
         <Input label="Project name" value={project.name} onChange={(value) => updateProject("name", value)} />
         <Input label="Cafe / brand name" value={project.cafeName} onChange={(value) => updateProject("cafeName", value)} />
@@ -1234,7 +1443,36 @@ function SummarySection({ title, children }: { title: string; children: React.Re
   return <section className="grid gap-2 border-t border-line pt-4 text-sm leading-6 text-muted"><h3 className="text-base font-bold text-ink">{title}</h3>{children}</section>;
 }
 
-function SettingsPage({ data, setData, resetDemo }: { data: AppData; setData: (data: AppData) => void; resetDemo: () => void }) {
+function LocalDataSettings({ data, selectedId, createProject, exportBackup, importBackupFile, clearAllLocalData, resetDemo }: { data: AppData; selectedId: string; createProject: () => void; exportBackup: () => void; importBackupFile: (file: File) => void; clearAllLocalData: () => void; resetDemo: () => void }) {
+  const activeProject = data.projects.find((project) => project.id === selectedId);
+  const lastSavedAt = typeof window !== "undefined" ? localStorage.getItem("fnb-consult-last-saved-at") : "";
+  const dataSize = new Blob([JSON.stringify(data)]).size;
+  return (
+    <div className="rounded-lg border border-line bg-white p-5 shadow-soft">
+      <h3 className="font-bold">Local Data & Backup</h3>
+      <p className="mt-2 text-sm leading-6 text-muted">Data aplikasi ini tersimpan di browser/perangkat ini. Jika browser cache dihapus atau membuka dari perangkat lain, data bisa berbeda. Gunakan export backup untuk menyimpan salinan data.</p>
+      <div className="mt-4 grid gap-3 md:grid-cols-5">
+        <Card title="Storage mode" value="Local browser storage" />
+        <Card title="Total projects" value={`${data.projects.length}`} />
+        <Card title="Last saved" value={lastSavedAt ? new Date(lastSavedAt).toLocaleString("id-ID", { dateStyle: "short", timeStyle: "short" }) : "-"} />
+        <Card title="Data size" value={`${(dataSize / 1024).toFixed(1)} KB`} />
+        <Card title="Active project" value={activeProject?.cafeName || "-"} />
+      </div>
+      <div className="mt-4 flex flex-wrap gap-2">
+        <button className="h-10 rounded-md bg-ink px-3 text-sm font-medium text-white" onClick={exportBackup}>Export backup JSON</button>
+        <label className="inline-flex h-10 cursor-pointer items-center rounded-md border border-line bg-white px-3 text-sm">
+          Import backup JSON
+          <input className="hidden" type="file" accept="application/json" onChange={(event) => event.target.files?.[0] && importBackupFile(event.target.files[0])} />
+        </label>
+        <button className="h-10 rounded-md border border-line bg-white px-3 text-sm text-clay" onClick={clearAllLocalData}>Clear all local data</button>
+        <button className="h-10 rounded-md border border-line bg-white px-3 text-sm" onClick={resetDemo}>Reset demo data</button>
+        <button className="h-10 rounded-md bg-sage px-3 text-sm font-medium text-white" onClick={createProject}>Create blank project</button>
+      </div>
+    </div>
+  );
+}
+
+function SettingsPage({ data, setData, resetDemo, selectedId, createProject, exportBackup, importBackupFile, clearAllLocalData }: { data: AppData; setData: (data: AppData) => void; resetDemo: () => void; selectedId: string; createProject: () => void; exportBackup: () => void; importBackupFile: (file: File) => void; clearAllLocalData: () => void }) {
   const settings = data.settings;
   const [editingChecklistId, setEditingChecklistId] = useState("");
   const [checklistDraft, setChecklistDraft] = useState<ChecklistLibraryItem | null>(null);
@@ -1279,6 +1517,7 @@ function SettingsPage({ data, setData, resetDemo }: { data: AppData; setData: (d
   return (
     <div className="grid gap-5">
       <h2 className="text-2xl font-bold">Settings / Master Data</h2>
+      <LocalDataSettings data={data} selectedId={selectedId} createProject={createProject} exportBackup={exportBackup} importBackupFile={importBackupFile} clearAllLocalData={clearAllLocalData} resetDemo={resetDemo} />
       <div className="grid gap-4 rounded-lg border border-line bg-white p-5 shadow-soft md:grid-cols-2">
         <Input label="Consultant / company name" value={settings.consultantName} onChange={(value) => updateSettings({ consultantName: value })} />
         <Input label="Phone" value={settings.phone} onChange={(value) => updateSettings({ phone: value })} />
