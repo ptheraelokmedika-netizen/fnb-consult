@@ -119,6 +119,13 @@ function now() {
   return new Date().toISOString();
 }
 
+function getProjectDisplayName(project?: Partial<Project> | null) {
+  const explicitName = project?.name?.trim();
+  const cafeBrandName = (project as Partial<Project> & { cafeBrandName?: string })?.cafeBrandName?.trim();
+  const cafeName = project?.cafeName?.trim();
+  return explicitName || cafeBrandName || cafeName || "Untitled Project";
+}
+
 function Input({
   label,
   value,
@@ -223,7 +230,8 @@ function EmptyHint({ children }: { children: React.ReactNode }) {
 
 function copyProject(project: Project): Project {
   const now = new Date().toISOString();
-  return { ...structuredClone(project), id: id(), name: `${project.name} Copy`, cafeName: `${project.cafeName} Copy`, createdAt: now, updatedAt: now, health: "Draft" };
+  const displayName = getProjectDisplayName(project);
+  return { ...structuredClone(project), id: id(), name: `${displayName} Copy`, cafeName: `${(project.cafeName || displayName).trim()} Copy`, createdAt: now, updatedAt: now, health: "Draft" };
 }
 
 function ConfirmDeleteModal({ projectName, onCancel, onConfirm }: { projectName: string; onCancel: () => void; onConfirm: () => void }) {
@@ -253,7 +261,7 @@ function ProjectManagerModal({ data, onClose, onSelect, onDuplicate, onDelete }:
           {data.projects.map((project) => (
             <div key={project.id} className="grid gap-3 rounded-md border border-line p-3 md:grid-cols-[1fr_auto]">
               <button className="text-left" onClick={() => onSelect(project.id)}>
-                <strong>{project.cafeName}</strong>
+                <strong>{getProjectDisplayName(project)}</strong>
                 <p className="text-sm text-muted">{project.health} · Last updated {new Date(project.updatedAt).toLocaleString("id-ID", { dateStyle: "short", timeStyle: "short" })}</p>
               </button>
               <div className="flex flex-wrap gap-2">
@@ -391,8 +399,10 @@ export default function Page() {
         return;
       }
       if (!window.confirm("Import backup akan mengganti data saat ini. Lanjutkan?")) return;
-      setData(parsed);
-      setSelectedId(parsed.projects[0]?.id || "");
+      saveData(parsed);
+      const migrated = loadData();
+      setData(migrated);
+      setSelectedId(migrated.projects[0]?.id || "");
       setActive("dashboard");
     } catch {
       window.alert("File backup tidak bisa dibaca. Pastikan formatnya JSON backup dari aplikasi ini.");
@@ -462,7 +472,7 @@ export default function Page() {
         }}>
           {data.projects.map((item) => (
             <option key={item.id} value={item.id}>
-              {item.cafeName}
+              {getProjectDisplayName(item)}
             </option>
           ))}
           <option value="__new__">+ Buat Project Baru</option>
@@ -488,7 +498,7 @@ export default function Page() {
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <p className="text-xs font-semibold uppercase tracking-wide text-muted">Project aktif</p>
-              <h2 className="text-xl font-bold">{project.cafeName}</h2>
+              <h2 className="text-xl font-bold">{getProjectDisplayName(project)}</h2>
             </div>
             <div className="flex flex-wrap gap-2">
               <div className="grid content-center text-right text-xs text-muted">
@@ -500,7 +510,7 @@ export default function Page() {
                 if (event.target.value === "__manage__") return setProjectManagerOpen(true);
                 setSelectedId(event.target.value);
               }}>
-                {data.projects.map((item) => <option key={item.id} value={item.id}>{item.cafeName}</option>)}
+                {data.projects.map((item) => <option key={item.id} value={item.id}>{getProjectDisplayName(item)}</option>)}
                 <option value="__new__">+ Buat Project Baru</option>
                 <option value="__manage__">Kelola Project</option>
               </select>
@@ -522,7 +532,7 @@ export default function Page() {
         </header>
 
         <div className="px-4 py-6 lg:px-8">
-          {active === "dashboard" && <Dashboard data={data} setData={setData} setSelectedId={setSelectedId} setActive={setActive} resetDemo={resetDemo} createProject={createProject} duplicateProject={duplicateProject} requestDeleteProject={requestDeleteProject} importBackupFile={importBackupFile} />}
+          {active === "dashboard" && <Dashboard data={data} selectedId={selectedId} setSelectedId={setSelectedId} setActive={setActive} resetDemo={resetDemo} createProject={createProject} duplicateProject={duplicateProject} requestDeleteProject={requestDeleteProject} importBackupFile={importBackupFile} />}
           {active === "project" && <ProjectBasics project={project} updateProject={updateProject} requestDeleteProject={requestDeleteProject} duplicateProject={duplicateProject} />}
           {active === "ownership" && <Ownership project={project} setProject={setProject} />}
           {active === "setup" && <SetupBudget project={project} setProject={setProject} settings={data.settings} />}
@@ -558,7 +568,7 @@ export default function Page() {
       </section>
       {pendingDeleteId && (
         <ConfirmDeleteModal
-          projectName={data.projects.find((item) => item.id === pendingDeleteId)?.cafeName || "project ini"}
+          projectName={getProjectDisplayName(data.projects.find((item) => item.id === pendingDeleteId))}
           onCancel={() => setPendingDeleteId("")}
           onConfirm={confirmDeleteProject}
         />
@@ -576,7 +586,7 @@ export default function Page() {
   );
 }
 
-function Dashboard({ data, setData, setSelectedId, setActive, resetDemo, createProject, duplicateProject, requestDeleteProject, importBackupFile }: { data: AppData; setData: (data: AppData) => void; setSelectedId: (id: string) => void; setActive: (key: ModuleKey) => void; resetDemo: () => void; createProject: () => void; duplicateProject: (project: Project) => void; requestDeleteProject: (id: string) => void; importBackupFile: (file: File) => void }) {
+function Dashboard({ data, selectedId, setSelectedId, setActive, resetDemo, createProject, duplicateProject, requestDeleteProject, importBackupFile }: { data: AppData; selectedId: string; setSelectedId: (id: string) => void; setActive: (key: ModuleKey) => void; resetDemo: () => void; createProject: () => void; duplicateProject: (project: Project) => void; requestDeleteProject: (id: string) => void; importBackupFile: (file: File) => void }) {
   if (!data.projects.length) return <EmptyDashboard createProject={createProject} importBackupFile={importBackupFile} resetDemo={resetDemo} />;
   return (
     <div className="grid gap-5">
@@ -597,10 +607,10 @@ function Dashboard({ data, setData, setSelectedId, setActive, resetDemo, createP
           const mp = monthlyProjectionResult(project);
           const readiness = calculateReadinessScore(project);
           return (
-            <div key={project.id} className="rounded-lg border border-line bg-white p-5 text-left shadow-soft transition hover:-translate-y-0.5">
+            <div key={project.id} className={cn("rounded-lg border bg-white p-5 text-left shadow-soft transition hover:-translate-y-0.5", selectedId === project.id ? "border-sage ring-2 ring-sage/20" : "border-line")}>
               <div className="flex items-start justify-between gap-3">
                 <button className="text-left" onClick={() => { setSelectedId(project.id); setActive("summary"); }}>
-                  <h3 className="text-lg font-bold">{project.cafeName}</h3>
+                  <h3 className="text-lg font-bold">{getProjectDisplayName(project)}</h3>
                   <p className="text-sm text-muted">{project.businessType} · {project.projectStatus}</p>
                 </button>
                 <Badge tone={project.health === "Ready to pitch" || project.health === "Opened" ? "good" : project.health === "Needs review" ? "bad" : "warn"}>{project.health}</Badge>
@@ -613,6 +623,7 @@ function Dashboard({ data, setData, setSelectedId, setActive, resetDemo, createP
                 <span className="text-muted">Readiness</span><strong>{num(readiness.score)}% · {readiness.status}</strong>
               </div>
               <div className="mt-4 flex flex-wrap gap-2">
+                <button className="h-9 rounded-md bg-ink px-3 text-sm font-medium text-white" onClick={() => { setSelectedId(project.id); setActive("project"); }}>Open project</button>
                 <button className="h-9 rounded-md border border-line px-3 text-sm" onClick={() => duplicateProject(project)}>Duplicate</button>
                 <button className="h-9 rounded-md border border-line px-3 text-sm text-clay" onClick={() => requestDeleteProject(project.id)}>Delete</button>
               </div>
@@ -1358,7 +1369,7 @@ function SummaryPage({ project, setProject, settings, result, scenario, onDuplic
       </div>
       <div>
         <p className="text-sm font-semibold uppercase tracking-wide text-sage">Project Summary / Pitch Page</p>
-        <h2 className="mt-1 text-3xl font-bold">{project.cafeName}</h2>
+        <h2 className="mt-1 text-3xl font-bold">{getProjectDisplayName(project)}</h2>
         <p className="mt-2 text-sm text-muted">Generated {new Date().toLocaleDateString("id-ID")} · {settings.consultantName}</p>
       </div>
       <div className="grid gap-3 md:grid-cols-4">
@@ -1456,7 +1467,7 @@ function LocalDataSettings({ data, selectedId, createProject, exportBackup, impo
         <Card title="Total projects" value={`${data.projects.length}`} />
         <Card title="Last saved" value={lastSavedAt ? new Date(lastSavedAt).toLocaleString("id-ID", { dateStyle: "short", timeStyle: "short" }) : "-"} />
         <Card title="Data size" value={`${(dataSize / 1024).toFixed(1)} KB`} />
-        <Card title="Active project" value={activeProject?.cafeName || "-"} />
+        <Card title="Active project" value={getProjectDisplayName(activeProject)} />
       </div>
       <div className="mt-4 flex flex-wrap gap-2">
         <button className="h-10 rounded-md bg-ink px-3 text-sm font-medium text-white" onClick={exportBackup}>Export backup JSON</button>
