@@ -44,6 +44,56 @@ export function budgetDifference(items: SetupBudgetItem[]) {
   return totalEstimatedSetupBudget(items) - totalActualSpending(items);
 }
 
+const oldSources = ["existing_old_asset", "old_renovation_cost", "old_stock"];
+const newSources = ["new_item_to_buy", "new_renovation_cost", "replacement_or_repair"];
+
+export function calculateHistoricalSpending(items: SetupBudgetItem[]) {
+  return sum(items.filter((item) => oldSources.includes(item.itemSource)).map((item) => n(item.originalPurchasePrice || item.actualPrice) * Math.max(1, n(item.quantity) || 1)));
+}
+
+export function calculateCurrentUsableAssetValue(items: SetupBudgetItem[]) {
+  return sum(items.filter((item) => oldSources.includes(item.itemSource) && item.stillUsableForNewConcept && item.condition !== "Not usable").map((item) => n(item.currentEstimatedValue) * Math.max(1, n(item.quantity) || 1)));
+}
+
+export function calculateNewEstimatedBudgetNeeded(items: SetupBudgetItem[]) {
+  return sum(items.filter((item) => newSources.includes(item.itemSource) && !item.purchased).map((item) => n(item.estimatedPrice) * Math.max(1, n(item.quantity) || 1)));
+}
+
+export function calculateNewActualSpending(items: SetupBudgetItem[]) {
+  return sum(items.filter((item) => newSources.includes(item.itemSource) && item.purchased).map((item) => n(item.actualPrice) * Math.max(1, n(item.quantity) || 1)));
+}
+
+export function calculateRemainingBudgetNeeded(items: SetupBudgetItem[]) {
+  return calculateNewEstimatedBudgetNeeded(items);
+}
+
+export function calculateTotalCapitalPicture(items: SetupBudgetItem[]) {
+  return calculateCurrentUsableAssetValue(items) + calculateNewActualSpending(items) + calculateRemainingBudgetNeeded(items);
+}
+
+export function calculateSetupBudgetSummaryBySource(items: SetupBudgetItem[]) {
+  const overBudgetAmount = sum(items.filter((item) => item.purchased).map((item) => Math.max(0, n(item.actualPrice) * Math.max(1, n(item.quantity) || 1) - n(item.estimatedPrice) * Math.max(1, n(item.quantity) || 1))));
+  return {
+    historicalSpending: calculateHistoricalSpending(items),
+    currentUsableAssetValue: calculateCurrentUsableAssetValue(items),
+    newEstimatedBudgetNeeded: calculateNewEstimatedBudgetNeeded(items),
+    newActualSpending: calculateNewActualSpending(items),
+    remainingBudgetNeeded: calculateRemainingBudgetNeeded(items),
+    totalCapitalPicture: calculateTotalCapitalPicture(items),
+    itemsNotPurchased: items.filter((item) => item.required && newSources.includes(item.itemSource) && !item.purchased).length,
+    overBudgetAmount,
+  };
+}
+
+export function calculatePartnerCapitalContribution(project: Project) {
+  return project.ownership.partners.map((partner) => {
+    const paidOld = sum(project.setupBudget.filter((item) => item.paidByPartnerId === partner.id && oldSources.includes(item.itemSource)).map((item) => n(item.originalPurchasePrice || item.actualPrice) * Math.max(1, n(item.quantity) || 1)));
+    const currentAsset = sum(project.setupBudget.filter((item) => item.assetOwnerPartnerId === partner.id && item.countAsCapitalContribution && item.stillUsableForNewConcept && item.condition !== "Not usable").map((item) => n(item.currentEstimatedValue) * Math.max(1, n(item.quantity) || 1)));
+    const newCash = sum(project.setupBudget.filter((item) => item.paidByPartnerId === partner.id && newSources.includes(item.itemSource) && item.purchased).map((item) => n(item.actualPrice) * Math.max(1, n(item.quantity) || 1)));
+    return { partner, cashPaidForOldSpending: paidOld, currentAssetValueContributed: currentAsset, newCashSpending: newCash, totalCountedContribution: currentAsset + newCash, ownershipPercentage: partner.ownershipPercentage, notes: partner.notes };
+  });
+}
+
 export function existingAssetCapital(assets: ExistingAsset[]) {
   return sum(assets.filter((asset) => asset.countedAsCapital).map((asset) => asset.currentValue));
 }

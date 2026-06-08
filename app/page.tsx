@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +24,14 @@ import {
   calculateOpeningBuffer,
   calculateOpeningScenarioResult,
   calculateReadinessScore,
+  calculateHistoricalSpending,
+  calculateCurrentUsableAssetValue,
+  calculateNewEstimatedBudgetNeeded,
+  calculateNewActualSpending,
+  calculateRemainingBudgetNeeded,
+  calculateTotalCapitalPicture,
+  calculatePartnerCapitalContribution,
+  calculateSetupBudgetSummaryBySource,
   calculateStaffPlanResult,
   calculateStaffRoleCost,
   calculateTotalPayroll,
@@ -118,6 +126,19 @@ function setupCategoryName(categories: MasterCategory[], item: SetupBudgetItem) 
 function now() {
   return new Date().toISOString();
 }
+
+const itemSourceOptions: Array<{ value: SetupBudgetItem["itemSource"]; label: string }> = [
+  { value: "existing_old_asset", label: "Aset lama sudah ada" },
+  { value: "old_renovation_cost", label: "Renovasi lama" },
+  { value: "old_stock", label: "Stok lama" },
+  { value: "new_item_to_buy", label: "Barang baru akan dibeli" },
+  { value: "new_renovation_cost", label: "Renovasi lanjutan" },
+  { value: "replacement_or_repair", label: "Perbaikan / penggantian" },
+  { value: "optional_future_item", label: "Optional nanti" },
+];
+
+const oldItemSources: SetupBudgetItem["itemSource"][] = ["existing_old_asset", "old_renovation_cost", "old_stock"];
+const newItemSources: SetupBudgetItem["itemSource"][] = ["new_item_to_buy", "new_renovation_cost", "replacement_or_repair"];
 
 function getProjectDisplayName(project?: Partial<Project> | null) {
   const explicitName = project?.name?.trim();
@@ -262,7 +283,7 @@ function ProjectManagerModal({ data, onClose, onSelect, onDuplicate, onDelete }:
             <div key={project.id} className="grid gap-3 rounded-md border border-line p-3 md:grid-cols-[1fr_auto]">
               <button className="text-left" onClick={() => onSelect(project.id)}>
                 <strong>{getProjectDisplayName(project)}</strong>
-                <p className="text-sm text-muted">{project.health} · Last updated {new Date(project.updatedAt).toLocaleString("id-ID", { dateStyle: "short", timeStyle: "short" })}</p>
+                <p className="text-sm text-muted">{project.health} Â· Last updated {new Date(project.updatedAt).toLocaleString("id-ID", { dateStyle: "short", timeStyle: "short" })}</p>
               </button>
               <div className="flex flex-wrap gap-2">
                 <button className="h-9 rounded-md border border-line px-3 text-sm" onClick={() => onDuplicate(project)}>Duplicate</button>
@@ -611,7 +632,7 @@ function Dashboard({ data, selectedId, setSelectedId, setActive, resetDemo, crea
               <div className="flex items-start justify-between gap-3">
                 <button className="text-left" onClick={() => { setSelectedId(project.id); setActive("summary"); }}>
                   <h3 className="text-lg font-bold">{getProjectDisplayName(project)}</h3>
-                  <p className="text-sm text-muted">{project.businessType} · {project.projectStatus}</p>
+                  <p className="text-sm text-muted">{project.businessType} Â· {project.projectStatus}</p>
                 </button>
                 <Badge tone={project.health === "Ready to pitch" || project.health === "Opened" ? "good" : project.health === "Needs review" ? "bad" : "warn"}>{project.health}</Badge>
               </div>
@@ -620,7 +641,7 @@ function Dashboard({ data, selectedId, setSelectedId, setActive, resetDemo, crea
                 <span className="text-muted">Actual spending</span><strong>{money(totalActualSpending(project.setupBudget))}</strong>
                 <span className="text-muted">Biaya bulanan</span><strong>{money(mp.operatingCost)}</strong>
                 <span className="text-muted">Net profit</span><strong>{money(mp.netProfit)}</strong>
-                <span className="text-muted">Readiness</span><strong>{num(readiness.score)}% · {readiness.status}</strong>
+                <span className="text-muted">Readiness</span><strong>{num(readiness.score)}% Â· {readiness.status}</strong>
               </div>
               <div className="mt-4 flex flex-wrap gap-2">
                 <button className="h-9 rounded-md bg-ink px-3 text-sm font-medium text-white" onClick={() => { setSelectedId(project.id); setActive("project"); }}>Open project</button>
@@ -650,12 +671,14 @@ function ProjectBasics({ project, updateProject, requestDeleteProject, duplicate
         <Input label="Cafe / brand name" value={project.cafeName} onChange={(value) => updateProject("cafeName", value)} />
         <Select label="Business type" value={project.businessType} onChange={(value) => updateProject("businessType", value)} options={["Cafe full service", "Beverage only", "Food and Beverage", "Dessert shop", "Cloud kitchen", "Booth / tenant", "Other"]} />
         <Select label="Project status" value={project.projectStatus} onChange={(value) => updateProject("projectStatus", value)} options={["Baru mulai", "Sudah berjalan", "Take over usaha lama", "Rebranding / renovasi"]} />
+        <Select label="Project continuation type" value={project.continuationType} onChange={(value) => updateProject("continuationType", value as Project["continuationType"])} options={["brand_new_project", "existing_cafe_continuation", "old_project_restarted", "take_over_old_cafe", "rebrand_existing_cafe"]} />
         <Select label="Place status" value={project.placeStatus} onChange={(value) => updateProject("placeStatus", value)} options={["Tempat sendiri", "Sewa", "Revenue sharing dengan pemilik tempat", "Tenant / booth", "Partnership location"]} />
         <Input label="Target opening date" type="date" value={project.targetOpeningDate} onChange={(value) => updateProject("targetOpeningDate", value)} />
         <Select label="Project health" value={project.health} onChange={(value) => updateProject("health", value as Project["health"])} options={["Draft", "In progress", "Ready to pitch", "Opened", "Needs review"]} />
         <TextArea label="Location notes" value={project.locationNotes} onChange={(value) => updateProject("locationNotes", value)} />
         <TextArea label="Consultant notes" value={project.consultantNotes} onChange={(value) => updateProject("consultantNotes", value)} />
       </div>
+      {(project.continuationType === "old_project_restarted" || project.continuationType === "existing_cafe_continuation") && <EmptyHint>Gunakan Modal Awal untuk memisahkan pengeluaran lama, nilai aset yang masih bisa dipakai, dan kebutuhan modal baru.</EmptyHint>}
     </div>
   );
 }
@@ -710,19 +733,19 @@ function SetupBudget({ project, setProject, settings }: { project: Project; setP
   const [librarySearch, setLibrarySearch] = useState("");
   const [libraryCategory, setLibraryCategory] = useState("all");
   const [selectedLibraryItems, setSelectedLibraryItems] = useState<string[]>([]);
+  const [tab, setTab] = useState<"all" | "old" | "new" | "partner" | "summary">("all");
   const categories = activeCategories(settings, "setup_budget");
   const otherCategory = categories.find((category) => category.name === "Other") || categories[0];
-  const requiredNotPurchased = project.setupBudget.filter((item) => item.required && !item.purchased).length;
-  const overBudgetAmount = sum(project.setupBudget.map((item) => Math.max(0, item.actualPrice * Math.max(1, item.quantity) - item.estimatedPrice * Math.max(1, item.quantity))));
-  const underBudgetAmount = sum(project.setupBudget.map((item) => (item.actualPrice > 0 ? Math.max(0, item.estimatedPrice * Math.max(1, item.quantity) - item.actualPrice * Math.max(1, item.quantity)) : 0)));
-  const completion = safeDivide(project.setupBudget.filter((item) => item.purchased).length, project.setupBudget.length) * 100;
+  const setupSummary = calculateSetupBudgetSummaryBySource(project.setupBudget);
+  const partnerRecap = calculatePartnerCapitalContribution(project);
   const updateItem = (index: number, patch: Partial<SetupBudgetItem>) => setProject({ ...project, setupBudget: project.setupBudget.map((item, itemIndex) => (itemIndex === index ? { ...item, ...patch, updatedAt: now() } : item)) });
-  const blankItem = (): SetupBudgetItem => ({ ...makeSetupItem("Item baru", otherCategory?.name || "Other"), categoryId: otherCategory?.id || "", category: otherCategory?.name || "Other", createdAt: now(), updatedAt: now() });
+  const blankItem = (): SetupBudgetItem => ({ ...makeSetupItem("Item baru", otherCategory?.name || "Other"), categoryId: otherCategory?.id || "", category: otherCategory?.name || "Other", itemSource: "new_item_to_buy", createdAt: now(), updatedAt: now() });
   const setupFromLibrary = (item: ChecklistLibraryItem): SetupBudgetItem => ({
     ...makeSetupItem(item.name, categoryName(settings, item.categoryId), item.defaultEstimatedPrice, 0, item.defaultQuantity),
     categoryId: item.categoryId,
     category: categoryName(settings, item.categoryId),
     required: item.required,
+    itemSource: "new_item_to_buy",
     sourceLibraryItemId: item.id,
     notes: item.notes,
     createdAt: now(),
@@ -731,107 +754,104 @@ function SetupBudget({ project, setProject, settings }: { project: Project; setP
   const addLibraryItems = (idsToAdd: string[]) => {
     const selected = settings.defaultChecklistItems.filter((item) => idsToAdd.includes(item.id) && item.active);
     const duplicates = selected.filter((item) => project.setupBudget.some((budget) => budget.sourceLibraryItemId === item.id || budget.name.toLowerCase() === item.name.toLowerCase()));
-    if (duplicates.length && !window.confirm(`${duplicates.length} item sudah ada di project. Tetap tambahkan duplikat?`)) {
-      const duplicateIds = new Set(duplicates.map((item) => item.id));
-      setProject({ ...project, setupBudget: [...project.setupBudget, ...selected.filter((item) => !duplicateIds.has(item.id)).map(setupFromLibrary)] });
-    } else {
-      setProject({ ...project, setupBudget: [...project.setupBudget, ...selected.map(setupFromLibrary)] });
-    }
+    const duplicateIds = new Set(duplicates.map((item) => item.id));
+    const shouldAddDuplicates = !duplicates.length || window.confirm(`${duplicates.length} item sudah ada di project. Tetap tambahkan duplikat?`);
+    setProject({ ...project, setupBudget: [...project.setupBudget, ...selected.filter((item) => shouldAddDuplicates || !duplicateIds.has(item.id)).map(setupFromLibrary)] });
     setSelectedLibraryItems([]);
     setLibraryOpen(false);
   };
-  const filteredLibrary = settings.defaultChecklistItems.filter((item) => {
-    const matchesCategory = libraryCategory === "all" || item.categoryId === libraryCategory;
-    const matchesSearch = item.name.toLowerCase().includes(librarySearch.toLowerCase());
-    return item.active && matchesCategory && matchesSearch;
-  });
+  const filteredLibrary = settings.defaultChecklistItems.filter((item) => item.active && (libraryCategory === "all" || item.categoryId === libraryCategory) && item.name.toLowerCase().includes(librarySearch.toLowerCase()));
+  const filteredItems = project.setupBudget.filter((item) => tab === "all" || (tab === "old" && oldItemSources.includes(item.itemSource)) || (tab === "new" && newItemSources.includes(item.itemSource)));
+  const tabButton = (key: typeof tab, label: string) => <button className={cn("h-10 rounded-md border px-3 text-sm", tab === key ? "border-ink bg-ink text-white" : "border-line bg-white")} onClick={() => setTab(key)}>{label}</button>;
   return (
     <div className="grid gap-5">
-      <h2 className="text-2xl font-bold">Modal Awal & Pengadaan</h2>
-      <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
-        <Card title="Estimated total" value={money(totalEstimatedSetupBudget(project.setupBudget))} />
-        <Card title="Actual total" value={money(totalActualSpending(project.setupBudget))} />
-        <Card title="Selisih" value={money(budgetDifference(project.setupBudget))} />
-        <Card title="Belum dibeli" value={`${requiredNotPurchased} item`} />
-        <Card title="Over budget" value={money(overBudgetAmount)} />
-        <Card title="Completion" value={`${num(completion)}%`} detail={`Under budget ${money(underBudgetAmount)}`} />
+      <div>
+        <h2 className="text-2xl font-bold">Modal Awal & Pengadaan</h2>
+        <p className="text-sm text-muted">Pisahkan pengeluaran lama, nilai aset yang masih bisa dipakai, dan kebutuhan modal baru.</p>
+      </div>
+      <div className="grid gap-3 md:grid-cols-4 xl:grid-cols-8">
+        <Card title="Total pengeluaran lama" value={money(setupSummary.historicalSpending)} />
+        <Card title="Nilai aset lama yang masih bisa dipakai" value={money(setupSummary.currentUsableAssetValue)} />
+        <Card title="Estimasi kebutuhan baru" value={money(setupSummary.newEstimatedBudgetNeeded)} />
+        <Card title="Pengeluaran baru aktual" value={money(setupSummary.newActualSpending)} />
+        <Card title="Sisa kebutuhan dana" value={money(setupSummary.remainingBudgetNeeded)} />
+        <Card title="Total gambaran modal" value={money(setupSummary.totalCapitalPicture)} />
+        <Card title="Belum dibeli" value={`${setupSummary.itemsNotPurchased} item`} />
+        <Card title="Over budget" value={money(setupSummary.overBudgetAmount)} />
       </div>
       <div className="flex flex-wrap gap-2">
-        <button className="inline-flex h-10 items-center gap-2 rounded-md bg-sage px-3 text-sm font-medium text-white" onClick={() => setProject({ ...project, setupBudget: [...project.setupBudget, blankItem()] })}>
-          <Plus size={16} /> Tambah item manual
-        </button>
-        <button className="inline-flex h-10 items-center gap-2 rounded-md border border-line bg-white px-3 text-sm" onClick={() => setLibraryOpen(true)}>
-          <Plus size={16} /> Tambah dari Checklist Library
-        </button>
-        <button className="inline-flex h-10 items-center gap-2 rounded-md border border-line bg-white px-3 text-sm" onClick={() => addLibraryItems(settings.defaultChecklistItems.filter((item) => item.required && item.active).map((item) => item.id))}>
-          Tambahkan semua required items
-        </button>
+        {tabButton("all", "Semua Item")}
+        {tabButton("old", "Aset / Pengeluaran Lama")}
+        {tabButton("new", "Kebutuhan Baru")}
+        {tabButton("partner", "Rekap Partner")}
+        {tabButton("summary", "Ringkasan Modal")}
       </div>
+      {tab !== "partner" && tab !== "summary" && (
+        <div className="flex flex-wrap gap-2">
+          <button className="inline-flex h-10 items-center gap-2 rounded-md bg-sage px-3 text-sm font-medium text-white" onClick={() => setProject({ ...project, setupBudget: [...project.setupBudget, blankItem()] })}><Plus size={16} /> Tambah item manual</button>
+          <button className="inline-flex h-10 items-center gap-2 rounded-md border border-line bg-white px-3 text-sm" onClick={() => setLibraryOpen(true)}><Plus size={16} /> Tambah dari Checklist Library</button>
+          <button className="inline-flex h-10 items-center gap-2 rounded-md border border-line bg-white px-3 text-sm" onClick={() => addLibraryItems(settings.defaultChecklistItems.filter((item) => item.required && item.active).map((item) => item.id))}>Tambahkan semua required items</button>
+        </div>
+      )}
       {libraryOpen && (
         <div className="fixed inset-0 z-30 grid place-items-center bg-black/30 p-4">
           <div className="max-h-[86vh] w-full max-w-4xl overflow-auto rounded-lg bg-white p-5 shadow-soft">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <h3 className="text-lg font-bold">Tambah dari Checklist Library</h3>
-                <p className="text-sm text-muted">Pilih item library untuk dimasukkan ke project ini.</p>
-              </div>
-              <button className="h-9 rounded-md border border-line px-3 text-sm" onClick={() => setLibraryOpen(false)}>Tutup</button>
-            </div>
-            <div className="mt-4 grid gap-3 md:grid-cols-2">
-              <Input label="Search item" value={librarySearch} onChange={setLibrarySearch} />
-              <label className="grid gap-1.5 text-sm">
-                <span className="font-medium text-ink">Filter category</span>
-                <select className="h-10 rounded-md border border-line bg-white px-3 text-sm" value={libraryCategory} onChange={(event) => setLibraryCategory(event.target.value)}>
-                  <option value="all">Semua kategori</option>
-                  {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
-                </select>
-              </label>
-            </div>
-            <div className="mt-4 grid gap-2">
-              {filteredLibrary.map((item) => (
-                <label key={item.id} className="grid gap-2 rounded-md border border-line p-3 text-sm md:grid-cols-[auto_1fr_auto_auto]">
-                  <input type="checkbox" checked={selectedLibraryItems.includes(item.id)} onChange={(event) => setSelectedLibraryItems(event.target.checked ? [...selectedLibraryItems, item.id] : selectedLibraryItems.filter((idValue) => idValue !== item.id))} />
-                  <span><strong>{item.name}</strong><br /><span className="text-muted">{categoryName(settings, item.categoryId)} · Qty {item.defaultQuantity} · {money(item.defaultEstimatedPrice)}</span></span>
-                  <Badge tone={item.required ? "warn" : "neutral"}>{item.required ? "Required" : "Optional"}</Badge>
-                  <Badge tone={project.setupBudget.some((budget) => budget.sourceLibraryItemId === item.id || budget.name.toLowerCase() === item.name.toLowerCase()) ? "bad" : "good"}>{project.setupBudget.some((budget) => budget.sourceLibraryItemId === item.id || budget.name.toLowerCase() === item.name.toLowerCase()) ? "Sudah ada" : "Baru"}</Badge>
-                </label>
-              ))}
-            </div>
+            <div className="flex items-start justify-between gap-3"><div><h3 className="text-lg font-bold">Tambah dari Checklist Library</h3><p className="text-sm text-muted">Pilih item library untuk dimasukkan ke project ini.</p></div><button className="h-9 rounded-md border border-line px-3 text-sm" onClick={() => setLibraryOpen(false)}>Tutup</button></div>
+            <div className="mt-4 grid gap-3 md:grid-cols-2"><Input label="Search item" value={librarySearch} onChange={setLibrarySearch} /><label className="grid gap-1.5 text-sm"><span className="font-medium text-ink">Filter category</span><select className="h-10 rounded-md border border-line bg-white px-3 text-sm" value={libraryCategory} onChange={(event) => setLibraryCategory(event.target.value)}><option value="all">Semua kategori</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label></div>
+            <div className="mt-4 grid gap-2">{filteredLibrary.map((item) => <label key={item.id} className="grid gap-2 rounded-md border border-line p-3 text-sm md:grid-cols-[auto_1fr_auto_auto]"><input type="checkbox" checked={selectedLibraryItems.includes(item.id)} onChange={(event) => setSelectedLibraryItems(event.target.checked ? [...selectedLibraryItems, item.id] : selectedLibraryItems.filter((idValue) => idValue !== item.id))} /><span><strong>{item.name}</strong><br /><span className="text-muted">{categoryName(settings, item.categoryId)} · Qty {item.defaultQuantity} · {money(item.defaultEstimatedPrice)}</span></span><Badge tone={item.required ? "warn" : "neutral"}>{item.required ? "Required" : "Optional"}</Badge><Badge tone={project.setupBudget.some((budget) => budget.sourceLibraryItemId === item.id || budget.name.toLowerCase() === item.name.toLowerCase()) ? "bad" : "good"}>{project.setupBudget.some((budget) => budget.sourceLibraryItemId === item.id || budget.name.toLowerCase() === item.name.toLowerCase()) ? "Sudah ada" : "Baru"}</Badge></label>)}</div>
             <button className="mt-4 h-10 rounded-md bg-ink px-4 text-sm font-medium text-white" onClick={() => addLibraryItems(selectedLibraryItems)} disabled={!selectedLibraryItems.length}>Tambahkan item terpilih ke project</button>
           </div>
         </div>
       )}
-      <div className="grid gap-3">
-        {project.setupBudget.map((item, index) => (
-          <div key={item.id} className="grid gap-3 rounded-lg border border-line bg-white p-4 shadow-soft md:grid-cols-6">
-            <div className="md:col-span-6"><SetupStatusBadge item={item} /></div>
-            <Input label="Item" value={item.name} onChange={(value) => updateItem(index, { name: value })} />
-            <MasterCategorySelect value={item.categoryId || otherCategory?.id || ""} onChange={(value) => updateItem(index, { categoryId: value, category: categoryName(settings, value) })} categories={categories} />
-            <Input label="Estimated price" type="number" value={item.estimatedPrice} onChange={(value) => updateItem(index, { estimatedPrice: Number(value) })} />
-            <Input label="Actual price" type="number" value={item.actualPrice} onChange={(value) => updateItem(index, { actualPrice: Number(value), purchased: Number(value) > 0 })} />
-            <Input label="Qty" type="number" value={item.quantity} onChange={(value) => updateItem(index, { quantity: Number(value) })} />
-            <Input label="Vendor" value={item.vendor} onChange={(value) => updateItem(index, { vendor: value })} />
-            <label className="grid gap-1.5 text-sm">
-              <span className="font-medium text-ink">Paid by</span>
-              <select className="h-10 rounded-md border border-line bg-white px-3 text-sm outline-none focus:border-sage focus:ring-2 focus:ring-sage/20" value={item.paidByPartnerId || ""} onChange={(event) => updateItem(index, { paidByPartnerId: event.target.value, paidBy: project.ownership.partners.find((partner) => partner.id === event.target.value)?.name || "" })}>
-                <option value="">Belum dipilih</option>
-                {project.ownership.partners.map((partner) => <option key={partner.id} value={partner.id}>{partner.name}</option>)}
-              </select>
-            </label>
-            <Input label="Purchase date" type="date" value={item.purchaseDate} onChange={(value) => updateItem(index, { purchaseDate: value })} />
-            <label className="flex items-center gap-2 text-sm md:col-span-2"><input type="checkbox" checked={item.required} onChange={(event) => updateItem(index, { required: event.target.checked })} /> Required</label>
-            <label className="flex items-center gap-2 text-sm md:col-span-2"><input type="checkbox" checked={item.purchased} onChange={(event) => updateItem(index, { purchased: event.target.checked })} /> Sudah dibeli</label>
-            <TextArea label="Notes" value={item.notes} onChange={(value) => updateItem(index, { notes: value })} />
-            <button className="h-10 rounded-md border border-line text-sm text-clay md:col-span-6" onClick={() => setProject({ ...project, setupBudget: project.setupBudget.filter((row) => row.id !== item.id) })}>Hapus item</button>
-          </div>
-        ))}
-      </div>
+      {tab === "partner" && <PartnerContributionRecap rows={partnerRecap} />}
+      {tab === "summary" && <SetupCapitalSummary setupSummary={setupSummary} />}
+      {tab !== "partner" && tab !== "summary" && <div className="grid gap-4">{filteredItems.map((item) => <SetupBudgetItemCard key={item.id} item={item} project={project} settings={settings} categories={categories} index={project.setupBudget.findIndex((row) => row.id === item.id)} updateItem={updateItem} setProject={setProject} />)}</div>}
     </div>
   );
 }
 
+function SourceSelect({ value, onChange }: { value: SetupBudgetItem["itemSource"]; onChange: (value: SetupBudgetItem["itemSource"]) => void }) {
+  return <label className="grid min-w-0 gap-1.5 text-sm"><span className="font-medium text-ink">Status / sumber</span><select className="h-10 w-full rounded-md border border-line bg-white px-3 text-sm" value={value} onChange={(event) => onChange(event.target.value as SetupBudgetItem["itemSource"])}>{itemSourceOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>;
+}
+
+function PartnerSelect({ label, value, partners, onChange }: { label: string; value: string; partners: Partner[]; onChange: (idValue: string) => void }) {
+  return <label className="grid min-w-0 gap-1.5 text-sm"><span className="font-medium text-ink">{label}</span><select className="h-10 w-full rounded-md border border-line bg-white px-3 text-sm" value={value || ""} onChange={(event) => onChange(event.target.value)}><option value="">Belum dipilih</option>{partners.map((partner) => <option key={partner.id} value={partner.id}>{partner.name}</option>)}</select></label>;
+}
+
+function SetupBudgetItemCard({ item, project, settings, categories, index, updateItem, setProject }: { item: SetupBudgetItem; project: Project; settings: AppData["settings"]; categories: MasterCategory[]; index: number; updateItem: (index: number, patch: Partial<SetupBudgetItem>) => void; setProject: (project: Project) => void }) {
+  const isOld = oldItemSources.includes(item.itemSource);
+  return (
+    <div className="grid min-w-0 gap-4 rounded-lg border border-line bg-white p-4 shadow-soft md:grid-cols-2 xl:grid-cols-12">
+      <div className="min-w-0 xl:col-span-4"><Input label="Item name" value={item.name} onChange={(value) => updateItem(index, { name: value })} /></div>
+      <div className="min-w-0 xl:col-span-3"><MasterCategorySelect value={item.categoryId} onChange={(value) => updateItem(index, { categoryId: value, category: categoryName(settings, value) })} categories={categories} /></div>
+      <div className="min-w-0 xl:col-span-2"><SourceSelect value={item.itemSource} onChange={(value) => updateItem(index, { itemSource: value, required: value !== "optional_future_item" })} /></div>
+      <div className="flex min-w-0 flex-wrap items-end gap-3 xl:col-span-3"><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={item.required} onChange={(event) => updateItem(index, { required: event.target.checked })} /> Required</label><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={item.purchased} onChange={(event) => updateItem(index, { purchased: event.target.checked })} /> Purchased</label><SetupStatusBadge item={item} /></div>
+      <div className="min-w-0 xl:col-span-3"><Input label="Estimated price" type="number" value={item.estimatedPrice} onChange={(value) => updateItem(index, { estimatedPrice: Number(value) })} /></div>
+      <div className="min-w-0 xl:col-span-3"><Input label="Actual paid price" type="number" value={item.actualPrice} onChange={(value) => updateItem(index, { actualPrice: Number(value), purchased: Number(value) > 0 || item.purchased })} /></div>
+      <div className="min-w-0 xl:col-span-3"><Input label="Current asset value" type="number" value={item.currentEstimatedValue} onChange={(value) => updateItem(index, { currentEstimatedValue: Number(value) })} /></div>
+      <div className="min-w-0 xl:col-span-1"><Input label="Qty" type="number" value={item.quantity} onChange={(value) => updateItem(index, { quantity: Number(value) })} /></div>
+      <div className="min-w-0 xl:col-span-2"><Input label="Vendor" value={item.vendor} onChange={(value) => updateItem(index, { vendor: value })} /></div>
+      <div className="min-w-0 xl:col-span-3"><PartnerSelect label="Paid by partner" value={item.paidByPartnerId} partners={project.ownership.partners} onChange={(value) => updateItem(index, { paidByPartnerId: value, paidBy: project.ownership.partners.find((partner) => partner.id === value)?.name || "" })} /></div>
+      <div className="min-w-0 xl:col-span-3"><Input label="Purchase date" type="date" value={item.purchaseDate} onChange={(value) => updateItem(index, { purchaseDate: value })} /></div>
+      <div className="min-w-0 xl:col-span-3"><PartnerSelect label="Ownership / asset owner" value={item.assetOwnerPartnerId} partners={project.ownership.partners} onChange={(value) => updateItem(index, { assetOwnerPartnerId: value })} /></div>
+      <div className="flex min-w-0 flex-wrap items-end gap-3 xl:col-span-3"><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={item.countAsCapitalContribution} onChange={(event) => updateItem(index, { countAsCapitalContribution: event.target.checked })} /> Include in capital contribution</label></div>
+      {isOld && <><div className="min-w-0 xl:col-span-3"><Input label="Original purchase / renovation cost" type="number" value={item.originalPurchasePrice} onChange={(value) => updateItem(index, { originalPurchasePrice: Number(value) })} /></div><div className="min-w-0 xl:col-span-3"><Select label="Condition" value={item.condition} onChange={(value) => updateItem(index, { condition: value as SetupBudgetItem["condition"] })} options={["New", "Good", "Used but usable", "Needs repair", "Not usable"]} /></div><div className="flex min-w-0 items-end xl:col-span-3"><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={item.stillUsableForNewConcept} onChange={(event) => updateItem(index, { stillUsableForNewConcept: event.target.checked })} /> Still usable for new concept</label></div></>}
+      <div className="min-w-0 xl:col-span-12"><TextArea label="Notes" value={item.notes} onChange={(value) => updateItem(index, { notes: value })} /></div>
+      <div className="flex justify-end xl:col-span-12"><button className="h-10 rounded-md border border-line px-4 text-sm text-clay" onClick={() => setProject({ ...project, setupBudget: project.setupBudget.filter((row) => row.id !== item.id) })}>Delete item</button></div>
+    </div>
+  );
+}
+
+function PartnerContributionRecap({ rows }: { rows: ReturnType<typeof calculatePartnerCapitalContribution> }) {
+  return <div className="overflow-auto rounded-lg border border-line bg-white shadow-soft"><div className="p-4 text-sm text-muted">Pengeluaran lama dicatat untuk dokumentasi, tetapi pembagian modal saat ini sebaiknya menggunakan nilai aset yang masih relevan/masih bisa dipakai, bukan selalu harga beli lama.</div><table className="w-full min-w-[860px] text-sm"><thead className="bg-paper text-left text-muted"><tr><th className="p-3">Partner</th><th>Cash paid old spending</th><th>Current asset value contributed</th><th>New cash spending</th><th>Total counted contribution</th><th>Ownership %</th><th>Notes</th></tr></thead><tbody>{rows.map((row) => <tr key={row.partner.id} className="border-t border-line"><td className="p-3 font-medium">{row.partner.name}</td><td>{money(row.cashPaidForOldSpending)}</td><td>{money(row.currentAssetValueContributed)}</td><td>{money(row.newCashSpending)}</td><td>{money(row.totalCountedContribution)}</td><td>{num(row.ownershipPercentage)}%</td><td>{row.notes}</td></tr>)}</tbody></table></div>;
+}
+
+function SetupCapitalSummary({ setupSummary }: { setupSummary: ReturnType<typeof calculateSetupBudgetSummaryBySource> }) {
+  return <div className="grid gap-4"><EmptyHint>Untuk project lanjutan, modal lama dan modal baru perlu dipisahkan. Pengeluaran lama tetap dicatat sebagai histori, tetapi nilai yang dipakai untuk pembagian modal saat ini bisa menggunakan nilai aset yang masih relevan atau masih bisa dipakai. Barang baru yang belum dibeli dihitung sebagai kebutuhan dana lanjutan.</EmptyHint><div className="rounded-lg border border-line bg-white p-5 shadow-soft text-sm leading-7"><p>Total pengeluaran lama: <strong>{money(setupSummary.historicalSpending)}</strong></p><p>Nilai aset lama yang masih dipakai: <strong>{money(setupSummary.currentUsableAssetValue)}</strong></p><p>Modal baru sudah keluar: <strong>{money(setupSummary.newActualSpending)}</strong></p><p>Modal baru masih dibutuhkan: <strong>{money(setupSummary.remainingBudgetNeeded)}</strong></p><p>Total modal aman saat ini: <strong>{money(setupSummary.totalCapitalPicture)}</strong></p></div></div>;
+}
 function SetupStatusBadge({ item }: { item: SetupBudgetItem }) {
-  if (!item.required) return <Badge tone="neutral">Optional</Badge>;
+  if (item.itemSource === "optional_future_item" || !item.required) return <Badge tone="neutral">Optional</Badge>;
+  if (oldItemSources.includes(item.itemSource)) return item.stillUsableForNewConcept && item.condition !== "Not usable" ? <Badge tone="good">Aset usable</Badge> : <Badge tone="warn">Histori saja</Badge>;
   if (!item.purchased) return <Badge tone="warn">Belum dibeli</Badge>;
   const estimated = item.estimatedPrice * Math.max(1, item.quantity);
   const actual = item.actualPrice * Math.max(1, item.quantity);
@@ -864,7 +884,7 @@ function Products({ project, setProject, categories }: { project: Project; setPr
           <Input label="Payment term" value={product.paymentTerm} onChange={(value) => updateProduct(index, { paymentTerm: value })} />
           {product.category === "Other" && <Input label="Notes untuk kategori Other" value={product.notes} onChange={(value) => updateProduct(index, { notes: value })} />}
           <div className="rounded-md bg-paper p-3 text-sm md:col-span-5">
-            Margin: <strong>{num(productGrossMargin(product))}%</strong> · Markup: <strong>{num(productMarkup(product))}%</strong> · Cafe income/item: <strong>{money(cafeIncomePerProduct(product))}</strong> · Est. income/month: <strong>{money(monthlyProductIncome(product))}</strong>
+            Margin: <strong>{num(productGrossMargin(product))}%</strong> Â· Markup: <strong>{num(productMarkup(product))}%</strong> Â· Cafe income/item: <strong>{money(cafeIncomePerProduct(product))}</strong> Â· Est. income/month: <strong>{money(monthlyProductIncome(product))}</strong>
           </div>
           <button className="h-10 rounded-md border border-line text-sm text-clay md:col-span-5" onClick={() => setProject({ ...project, products: project.products.filter((row) => row.id !== product.id) })}>Hapus produk</button>
         </div>
@@ -973,7 +993,7 @@ function StaffPlanning({ project, setProject, staffCategories }: { project: Proj
               <Input label="Other allowance" type="number" value={role.otherAllowance} onChange={(value) => updateRole(index, { otherAllowance: Number(value) })} />
               <Input label="Notes" value={role.notes} onChange={(value) => updateRole(index, { notes: value })} />
               <div className="rounded-md bg-paper p-3 text-sm md:col-span-5">
-                Total per person: <strong>{money(cost.totalPerPerson)}</strong> · Total role cost: <strong>{money(cost.totalRoleCost)}</strong>
+                Total per person: <strong>{money(cost.totalPerPerson)}</strong> Â· Total role cost: <strong>{money(cost.totalRoleCost)}</strong>
               </div>
               <button className="h-10 rounded-md border border-line text-sm text-clay md:col-span-5" onClick={() => updateScenario({ roles: scenario.roles.filter((item) => item.id !== role.id) })}>Hapus role</button>
             </div>
@@ -1120,7 +1140,7 @@ function OpeningScenarioPage({ project, setProject }: { project: Project; setPro
         <h3 className="font-bold">Interpretasi</h3>
         <p className="mt-2 text-sm leading-6 text-muted">{result.interpretation}</p>
         <h3 className="mt-4 font-bold">Rekomendasi otomatis</h3>
-        <ul className="mt-2 grid gap-2 text-sm leading-6 text-muted">{result.recommendations.map((item) => <li key={item}>• {item}</li>)}</ul>
+        <ul className="mt-2 grid gap-2 text-sm leading-6 text-muted">{result.recommendations.map((item) => <li key={item}>â€¢ {item}</li>)}</ul>
         <p className="mt-4 text-xs leading-5 text-muted">Simulasi ini adalah estimasi awal. Hasil aktual dapat berbeda tergantung traffic lokasi, kualitas produk, repeat customer, promosi, harga bahan baku, dan operasional harian.</p>
       </div>
     </div>
@@ -1219,7 +1239,7 @@ function MenuMixPage({ project, setProject }: { project: Project; setProject: (p
             <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={item.isHeroProduct} onChange={(event) => updateItem(index, { isHeroProduct: event.target.checked })} /> Hero product</label>
             <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={item.isHighMargin} onChange={(event) => updateItem(index, { isHighMargin: event.target.checked })} /> High margin</label>
             <Input label="Notes" value={item.notes} onChange={(value) => updateItem(index, { notes: value })} />
-            <div className="rounded-md bg-paper p-3 text-sm md:col-span-5">Gross profit <strong>{money(item.grossProfit)}</strong> · Margin <strong>{num(item.grossMargin)}%</strong> · Monthly revenue <strong>{money(item.monthlyRevenueEstimate)}</strong> · Monthly gross profit <strong>{money(item.monthlyGrossProfitEstimate)}</strong></div>
+            <div className="rounded-md bg-paper p-3 text-sm md:col-span-5">Gross profit <strong>{money(item.grossProfit)}</strong> Â· Margin <strong>{num(item.grossMargin)}%</strong> Â· Monthly revenue <strong>{money(item.monthlyRevenueEstimate)}</strong> Â· Monthly gross profit <strong>{money(item.monthlyGrossProfitEstimate)}</strong></div>
             <button className="h-10 rounded-md border border-line text-sm text-clay md:col-span-5" onClick={() => setProject({ ...project, menuMixPlan: { ...project.menuMixPlan, items: project.menuMixPlan.items.filter((row) => row.id !== item.id), updatedAt: now() } })}>Hapus menu</button>
           </div>
         ))}
@@ -1314,8 +1334,8 @@ function ReadinessPage({ project }: { project: Project }) {
       </div>
       <EmptyHint>Project {num(readiness.score)}% ready to pitch. {readiness.recommendation}</EmptyHint>
       <div className="grid gap-4 md:grid-cols-2">
-        <div className="rounded-lg border border-line bg-white p-5 shadow-soft"><h3 className="font-bold">Completed</h3><ul className="mt-3 grid gap-2 text-sm text-muted">{readiness.completedItems.map((item) => <li key={item}>• {item}</li>)}</ul></div>
-        <div className="rounded-lg border border-line bg-white p-5 shadow-soft"><h3 className="font-bold">Missing</h3><ul className="mt-3 grid gap-2 text-sm text-muted">{readiness.missingItems.map((item) => <li key={item}>• {item}</li>)}</ul></div>
+        <div className="rounded-lg border border-line bg-white p-5 shadow-soft"><h3 className="font-bold">Completed</h3><ul className="mt-3 grid gap-2 text-sm text-muted">{readiness.completedItems.map((item) => <li key={item}>â€¢ {item}</li>)}</ul></div>
+        <div className="rounded-lg border border-line bg-white p-5 shadow-soft"><h3 className="font-bold">Missing</h3><ul className="mt-3 grid gap-2 text-sm text-muted">{readiness.missingItems.map((item) => <li key={item}>â€¢ {item}</li>)}</ul></div>
       </div>
     </div>
   );
@@ -1352,6 +1372,8 @@ function SummaryPage({ project, setProject, settings, result, scenario, onDuplic
   const staff = calculateStaffPlanResult(project);
   const staffScenario = project.staffPlan.scenarios.find((item) => item.id === project.staffPlan.selectedScenario) || project.staffPlan.scenarios.find((item) => item.selectedForPitch) || project.staffPlan.scenarios[0];
   const sharing = profitSharing(project, project.profitSharing.monthlyNetProfit || result.netProfit);
+  const setupSourceSummary = calculateSetupBudgetSummaryBySource(project.setupBudget);
+  const partnerCapitalRows = calculatePartnerCapitalContribution(project);
   const menuSummary = calculateMenuMixSummary(project.menuMixPlan.items || []);
   const menuRecommendations = generateMenuMixRecommendations(project.menuMixPlan.items || []);
   const buffer = calculateProjectCapitalBuffer(project);
@@ -1370,7 +1392,7 @@ function SummaryPage({ project, setProject, settings, result, scenario, onDuplic
       <div>
         <p className="text-sm font-semibold uppercase tracking-wide text-sage">Project Summary / Pitch Page</p>
         <h2 className="mt-1 text-3xl font-bold">{getProjectDisplayName(project)}</h2>
-        <p className="mt-2 text-sm text-muted">Generated {new Date().toLocaleDateString("id-ID")} · {settings.consultantName}</p>
+        <p className="mt-2 text-sm text-muted">Generated {new Date().toLocaleDateString("id-ID")} Â· {settings.consultantName}</p>
       </div>
       <div className="grid gap-3 md:grid-cols-4">
         <Card title="Estimated setup cost" value={money(totalEstimatedSetupBudget(project.setupBudget))} />
@@ -1379,15 +1401,20 @@ function SummaryPage({ project, setProject, settings, result, scenario, onDuplic
         <Card title="Payback period" value={result.paybackMonths ? `${num(result.paybackMonths)} bulan` : "Belum balik modal"} />
       </div>
       <SummarySection title="1. Project Overview">
-        <p>{project.businessType} · {project.projectStatus} · {project.placeStatus}</p>
+        <p>{project.businessType} Â· {project.projectStatus} Â· {project.placeStatus}</p>
         <p>Target opening: {project.targetOpeningDate || "-"}</p>
         <p>{project.locationNotes}</p>
       </SummarySection>
       <SummarySection title="2. Ownership & Partnership">
         {project.ownership.partners.map((partner) => <p key={partner.id}>{partner.name}: modal {money(partner.capitalContribution)}, ownership {num(partner.ownershipPercentage)}%, profit share {num(partner.profitSharingPercentage)}%. {partner.notes}</p>)}
       </SummarySection>
-      <SummarySection title="3. Setup Budget">
-        <p>Estimated {money(totalEstimatedSetupBudget(project.setupBudget))}, actual {money(totalActualSpending(project.setupBudget))}, remaining {money(budgetDifference(project.setupBudget))}.</p>
+      <SummarySection title="Modal Lama, Aset Eksisting & Kebutuhan Lanjutan">
+        <p>Historical spending {money(setupSourceSummary.historicalSpending)}, current usable asset value {money(setupSourceSummary.currentUsableAssetValue)}, new actual spending {money(setupSourceSummary.newActualSpending)}, remaining new budget {money(setupSourceSummary.remainingBudgetNeeded)}.</p>
+        <p>Capital buffer {num(project.capitalBuffer.bufferPercentage)}%, total recommended capital {money(buffer.totalRecommendedCapital)}.</p>
+        {(project.continuationType === "old_project_restarted" || project.continuationType === "existing_cafe_continuation") && <p>Catatan: pengeluaran lama dicatat sebagai histori, sementara pembagian modal saat ini sebaiknya memakai nilai aset lama yang masih relevan dan modal baru yang benar-benar keluar.</p>}
+        <div className="grid gap-1">
+          {partnerCapitalRows.map((row) => <p key={row.partner.id}>{row.partner.name}: old spending {money(row.cashPaidForOldSpending)}, asset contribution {money(row.currentAssetValueContributed)}, new cash {money(row.newCashSpending)}, counted contribution {money(row.totalCountedContribution)}.</p>)}
+        </div>
       </SummarySection>
       <SummarySection title="4. Existing Assets">
         <p>Total asset value {money(sum(project.existingAssets.map((asset) => asset.currentValue)))}. Counted as capital {money(existingAssetCapital(project.existingAssets))}.</p>
@@ -1427,7 +1454,7 @@ function SummaryPage({ project, setProject, settings, result, scenario, onDuplic
         <p>{highRisks.length >= 3 ? "Project perlu ditinjau ulang sebelum dipitch." : "Review risiko aktif dan validasi asumsi utama sebelum pitch."}</p>
       </SummarySection>
       <SummarySection title="Readiness Score">
-        <p>Readiness {num(readiness.score)}% · {readiness.status}. Completed {readiness.completedItems.length}, missing {readiness.missingItems.length}.</p>
+        <p>Readiness {num(readiness.score)}% Â· {readiness.status}. Completed {readiness.completedItems.length}, missing {readiness.missingItems.length}.</p>
         <p>{readiness.recommendation}</p>
         <p>Missing: {readiness.missingItems.slice(0, 5).join(", ") || "-"}</p>
       </SummarySection>
@@ -1601,3 +1628,5 @@ function SettingsPage({ data, setData, resetDemo, selectedId, createProject, exp
     </div>
   );
 }
+
+

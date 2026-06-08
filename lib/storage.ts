@@ -57,6 +57,7 @@ function migrateData(data: AppData): AppData {
   };
   const projects = (data.projects || []).map((project) => ({
     ...project,
+    continuationType: project.continuationType || "brand_new_project",
     setupBudget: (project.setupBudget || []).map((item) => migrateSetupItem(item, masterCategories)),
     staffPlan: project.staffPlan || defaultStaffPlan(),
     monthlyProjection: {
@@ -154,7 +155,14 @@ function migrateSetupItem(item: Project["setupBudget"][number], masterCategories
   return {
     ...item,
     categoryId: item.categoryId || findCategoryIdByName(item.category, masterCategories, "setup_budget"),
+    itemSource: item.itemSource || "new_item_to_buy",
+    originalPurchasePrice: item.originalPurchasePrice ?? item.actualPrice ?? 0,
+    currentEstimatedValue: item.currentEstimatedValue ?? item.actualPrice ?? 0,
     paidByPartnerId: item.paidByPartnerId || "",
+    assetOwnerPartnerId: item.assetOwnerPartnerId || item.paidByPartnerId || "",
+    condition: item.condition || "Good",
+    stillUsableForNewConcept: item.stillUsableForNewConcept ?? true,
+    countAsCapitalContribution: item.countAsCapitalContribution ?? false,
     sourceLibraryItemId: item.sourceLibraryItemId || "",
     createdAt: item.createdAt || now,
     updatedAt: item.updatedAt || now,

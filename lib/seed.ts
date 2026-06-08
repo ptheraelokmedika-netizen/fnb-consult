@@ -141,15 +141,22 @@ export function makeSetupItem(name: string, category: string, estimatedPrice = 0
     name,
     categoryId: categoryNameToId(category, "setup_budget"),
     category,
+    itemSource: "new_item_to_buy",
     required: true,
     estimatedPrice,
     actualPrice,
+    originalPurchasePrice: actualPrice,
+    currentEstimatedValue: actualPrice,
     quantity,
     vendor: "",
     paidByPartnerId: "",
+    assetOwnerPartnerId: "",
     paidBy: "",
     purchased: actualPrice > 0,
     purchaseDate: "",
+    condition: "Good",
+    stillUsableForNewConcept: true,
+    countAsCapitalContribution: false,
     notes: "",
     sourceLibraryItemId: "",
     createdAt: now,
@@ -329,6 +336,7 @@ export function createBlankProject(): Project {
     cafeName: "Cafe Baru",
     businessType: "Cafe full service",
     projectStatus: "Baru mulai",
+    continuationType: "brand_new_project",
     placeStatus: "Sewa",
     locationNotes: "",
     targetOpeningDate: "",
@@ -366,6 +374,7 @@ export function demoProject(): Project {
   project.cafeName = "Demo Cafe Kemitraan";
   project.businessType = "Beverage only";
   project.projectStatus = "Baru mulai";
+  project.continuationType = "old_project_restarted";
   project.placeStatus = "Revenue sharing dengan pemilik tempat";
   project.locationNotes = "Area depan ruko partner lokasi, traffic sore kuat.";
   project.targetOpeningDate = "2026-08-01";
@@ -388,9 +397,9 @@ export function demoProject(): Project {
     { id: id(), name: "AC 1 PK", category: "Electronics", owner: "Pemilik Lokasi C", currentValue: 6000000, originalPrice: 8500000, condition: "Good", countedAsCapital: true, notes: "" },
   ];
   project.setupBudget = [
-    makeSetupItem("Renovasi ringan", "Place / Location", 30000000, 28000000),
+    { ...makeSetupItem("Renovasi lama tahap 1", "Renovation", 80000000, 0), itemSource: "old_renovation_cost", originalPurchasePrice: 80000000, currentEstimatedValue: 50000000, purchased: true, countAsCapitalContribution: true, paidByPartnerId: project.ownership.partners[2].id, assetOwnerPartnerId: project.ownership.partners[2].id, paidBy: project.ownership.partners[2].name, notes: "Renovasi lama masih relevan sebagian untuk konsep baru." },
     makeSetupItem("Signage / papan nama", "Place / Location", 8000000, 9000000),
-    makeSetupItem("Coffee machine", "Equipment", 42000000, 41000000),
+    { ...makeSetupItem("Coffee machine existing", "Equipment", 42000000, 41000000), itemSource: "existing_old_asset", originalPurchasePrice: 41000000, currentEstimatedValue: 35000000, purchased: true, countAsCapitalContribution: true, paidByPartnerId: project.ownership.partners[0].id, assetOwnerPartnerId: project.ownership.partners[0].id, paidBy: project.ownership.partners[0].name },
     makeSetupItem("Grinder", "Equipment", 12000000, 12000000),
     makeSetupItem("Showcase dessert", "Equipment", 14000000, 0),
     makeSetupItem("POS device", "Equipment", 6500000, 6500000),
