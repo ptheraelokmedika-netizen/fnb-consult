@@ -249,6 +249,16 @@ function EmptyHint({ children }: { children: React.ReactNode }) {
   return <div className="rounded-lg border border-dashed border-line bg-white/60 p-5 text-sm leading-6 text-muted">{children}</div>;
 }
 
+function CleanList({ items }: { items: string[] }) {
+  return (
+    <ul className="mt-3 list-disc space-y-2 pl-5 text-sm leading-6 text-muted">
+      {items.map((item) => (
+        <li key={item}>{item}</li>
+      ))}
+    </ul>
+  );
+}
+
 function copyProject(project: Project): Project {
   const now = new Date().toISOString();
   const displayName = getProjectDisplayName(project);
@@ -283,7 +293,7 @@ function ProjectManagerModal({ data, onClose, onSelect, onDuplicate, onDelete }:
             <div key={project.id} className="grid gap-3 rounded-md border border-line p-3 md:grid-cols-[1fr_auto]">
               <button className="text-left" onClick={() => onSelect(project.id)}>
                 <strong>{getProjectDisplayName(project)}</strong>
-                <p className="text-sm text-muted">{project.health} Â· Last updated {new Date(project.updatedAt).toLocaleString("id-ID", { dateStyle: "short", timeStyle: "short" })}</p>
+                <p className="text-sm text-muted">{project.health} - Last updated {new Date(project.updatedAt).toLocaleString("id-ID", { dateStyle: "short", timeStyle: "short" })}</p>
               </button>
               <div className="flex flex-wrap gap-2">
                 <button className="h-9 rounded-md border border-line px-3 text-sm" onClick={() => onDuplicate(project)}>Duplicate</button>
@@ -632,7 +642,7 @@ function Dashboard({ data, selectedId, setSelectedId, setActive, resetDemo, crea
               <div className="flex items-start justify-between gap-3">
                 <button className="text-left" onClick={() => { setSelectedId(project.id); setActive("summary"); }}>
                   <h3 className="text-lg font-bold">{getProjectDisplayName(project)}</h3>
-                  <p className="text-sm text-muted">{project.businessType} Â· {project.projectStatus}</p>
+                  <p className="text-sm text-muted">{project.businessType} - {project.projectStatus}</p>
                 </button>
                 <Badge tone={project.health === "Ready to pitch" || project.health === "Opened" ? "good" : project.health === "Needs review" ? "bad" : "warn"}>{project.health}</Badge>
               </div>
@@ -641,7 +651,7 @@ function Dashboard({ data, selectedId, setSelectedId, setActive, resetDemo, crea
                 <span className="text-muted">Actual spending</span><strong>{money(totalActualSpending(project.setupBudget))}</strong>
                 <span className="text-muted">Biaya bulanan</span><strong>{money(mp.operatingCost)}</strong>
                 <span className="text-muted">Net profit</span><strong>{money(mp.netProfit)}</strong>
-                <span className="text-muted">Readiness</span><strong>{num(readiness.score)}% Â· {readiness.status}</strong>
+                <span className="text-muted">Readiness</span><strong>{num(readiness.score)}% - {readiness.status}</strong>
               </div>
               <div className="mt-4 flex flex-wrap gap-2">
                 <button className="h-9 rounded-md bg-ink px-3 text-sm font-medium text-white" onClick={() => { setSelectedId(project.id); setActive("project"); }}>Open project</button>
@@ -884,7 +894,7 @@ function Products({ project, setProject, categories }: { project: Project; setPr
           <Input label="Payment term" value={product.paymentTerm} onChange={(value) => updateProduct(index, { paymentTerm: value })} />
           {product.category === "Other" && <Input label="Notes untuk kategori Other" value={product.notes} onChange={(value) => updateProduct(index, { notes: value })} />}
           <div className="rounded-md bg-paper p-3 text-sm md:col-span-5">
-            Margin: <strong>{num(productGrossMargin(product))}%</strong> Â· Markup: <strong>{num(productMarkup(product))}%</strong> Â· Cafe income/item: <strong>{money(cafeIncomePerProduct(product))}</strong> Â· Est. income/month: <strong>{money(monthlyProductIncome(product))}</strong>
+            Margin: <strong>{num(productGrossMargin(product))}%</strong> - Markup: <strong>{num(productMarkup(product))}%</strong> - Cafe income/item: <strong>{money(cafeIncomePerProduct(product))}</strong> - Est. income/month: <strong>{money(monthlyProductIncome(product))}</strong>
           </div>
           <button className="h-10 rounded-md border border-line text-sm text-clay md:col-span-5" onClick={() => setProject({ ...project, products: project.products.filter((row) => row.id !== product.id) })}>Hapus produk</button>
         </div>
@@ -993,7 +1003,7 @@ function StaffPlanning({ project, setProject, staffCategories }: { project: Proj
               <Input label="Other allowance" type="number" value={role.otherAllowance} onChange={(value) => updateRole(index, { otherAllowance: Number(value) })} />
               <Input label="Notes" value={role.notes} onChange={(value) => updateRole(index, { notes: value })} />
               <div className="rounded-md bg-paper p-3 text-sm md:col-span-5">
-                Total per person: <strong>{money(cost.totalPerPerson)}</strong> Â· Total role cost: <strong>{money(cost.totalRoleCost)}</strong>
+                Total per person: <strong>{money(cost.totalPerPerson)}</strong> - Total role cost: <strong>{money(cost.totalRoleCost)}</strong>
               </div>
               <button className="h-10 rounded-md border border-line text-sm text-clay md:col-span-5" onClick={() => updateScenario({ roles: scenario.roles.filter((item) => item.id !== role.id) })}>Hapus role</button>
             </div>
@@ -1140,7 +1150,7 @@ function OpeningScenarioPage({ project, setProject }: { project: Project; setPro
         <h3 className="font-bold">Interpretasi</h3>
         <p className="mt-2 text-sm leading-6 text-muted">{result.interpretation}</p>
         <h3 className="mt-4 font-bold">Rekomendasi otomatis</h3>
-        <ul className="mt-2 grid gap-2 text-sm leading-6 text-muted">{result.recommendations.map((item) => <li key={item}>â€¢ {item}</li>)}</ul>
+        <CleanList items={result.recommendations} />
         <p className="mt-4 text-xs leading-5 text-muted">Simulasi ini adalah estimasi awal. Hasil aktual dapat berbeda tergantung traffic lokasi, kualitas produk, repeat customer, promosi, harga bahan baku, dan operasional harian.</p>
       </div>
     </div>
@@ -1239,7 +1249,7 @@ function MenuMixPage({ project, setProject }: { project: Project; setProject: (p
             <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={item.isHeroProduct} onChange={(event) => updateItem(index, { isHeroProduct: event.target.checked })} /> Hero product</label>
             <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={item.isHighMargin} onChange={(event) => updateItem(index, { isHighMargin: event.target.checked })} /> High margin</label>
             <Input label="Notes" value={item.notes} onChange={(value) => updateItem(index, { notes: value })} />
-            <div className="rounded-md bg-paper p-3 text-sm md:col-span-5">Gross profit <strong>{money(item.grossProfit)}</strong> Â· Margin <strong>{num(item.grossMargin)}%</strong> Â· Monthly revenue <strong>{money(item.monthlyRevenueEstimate)}</strong> Â· Monthly gross profit <strong>{money(item.monthlyGrossProfitEstimate)}</strong></div>
+            <div className="rounded-md bg-paper p-3 text-sm md:col-span-5">Gross profit <strong>{money(item.grossProfit)}</strong> - Margin <strong>{num(item.grossMargin)}%</strong> - Monthly revenue <strong>{money(item.monthlyRevenueEstimate)}</strong> - Monthly gross profit <strong>{money(item.monthlyGrossProfitEstimate)}</strong></div>
             <button className="h-10 rounded-md border border-line text-sm text-clay md:col-span-5" onClick={() => setProject({ ...project, menuMixPlan: { ...project.menuMixPlan, items: project.menuMixPlan.items.filter((row) => row.id !== item.id), updatedAt: now() } })}>Hapus menu</button>
           </div>
         ))}
@@ -1334,8 +1344,8 @@ function ReadinessPage({ project }: { project: Project }) {
       </div>
       <EmptyHint>Project {num(readiness.score)}% ready to pitch. {readiness.recommendation}</EmptyHint>
       <div className="grid gap-4 md:grid-cols-2">
-        <div className="rounded-lg border border-line bg-white p-5 shadow-soft"><h3 className="font-bold">Completed</h3><ul className="mt-3 grid gap-2 text-sm text-muted">{readiness.completedItems.map((item) => <li key={item}>â€¢ {item}</li>)}</ul></div>
-        <div className="rounded-lg border border-line bg-white p-5 shadow-soft"><h3 className="font-bold">Missing</h3><ul className="mt-3 grid gap-2 text-sm text-muted">{readiness.missingItems.map((item) => <li key={item}>â€¢ {item}</li>)}</ul></div>
+        <div className="rounded-lg border border-line bg-white p-5 shadow-soft"><h3 className="font-bold">Completed</h3><CleanList items={readiness.completedItems} /></div>
+        <div className="rounded-lg border border-line bg-white p-5 shadow-soft"><h3 className="font-bold">Missing</h3><CleanList items={readiness.missingItems} /></div>
       </div>
     </div>
   );
@@ -1392,7 +1402,7 @@ function SummaryPage({ project, setProject, settings, result, scenario, onDuplic
       <div>
         <p className="text-sm font-semibold uppercase tracking-wide text-sage">Project Summary / Pitch Page</p>
         <h2 className="mt-1 text-3xl font-bold">{getProjectDisplayName(project)}</h2>
-        <p className="mt-2 text-sm text-muted">Generated {new Date().toLocaleDateString("id-ID")} Â· {settings.consultantName}</p>
+        <p className="mt-2 text-sm text-muted">Generated {new Date().toLocaleDateString("id-ID")} - {settings.consultantName}</p>
       </div>
       <div className="grid gap-3 md:grid-cols-4">
         <Card title="Estimated setup cost" value={money(totalEstimatedSetupBudget(project.setupBudget))} />
@@ -1401,7 +1411,7 @@ function SummaryPage({ project, setProject, settings, result, scenario, onDuplic
         <Card title="Payback period" value={result.paybackMonths ? `${num(result.paybackMonths)} bulan` : "Belum balik modal"} />
       </div>
       <SummarySection title="1. Project Overview">
-        <p>{project.businessType} Â· {project.projectStatus} Â· {project.placeStatus}</p>
+        <p>{project.businessType} - {project.projectStatus} - {project.placeStatus}</p>
         <p>Target opening: {project.targetOpeningDate || "-"}</p>
         <p>{project.locationNotes}</p>
       </SummarySection>
@@ -1454,7 +1464,7 @@ function SummaryPage({ project, setProject, settings, result, scenario, onDuplic
         <p>{highRisks.length >= 3 ? "Project perlu ditinjau ulang sebelum dipitch." : "Review risiko aktif dan validasi asumsi utama sebelum pitch."}</p>
       </SummarySection>
       <SummarySection title="Readiness Score">
-        <p>Readiness {num(readiness.score)}% Â· {readiness.status}. Completed {readiness.completedItems.length}, missing {readiness.missingItems.length}.</p>
+        <p>Readiness {num(readiness.score)}% - {readiness.status}. Completed {readiness.completedItems.length}, missing {readiness.missingItems.length}.</p>
         <p>{readiness.recommendation}</p>
         <p>Missing: {readiness.missingItems.slice(0, 5).join(", ") || "-"}</p>
       </SummarySection>
